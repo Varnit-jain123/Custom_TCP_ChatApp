@@ -1,0 +1,14 @@
+# Compiled class files
+*.class
+
+# Log files
+*.log
+
+# Windows specific
+Thumbs.db
+Desktop.ini
+
+# IDE specific
+.vscode/
+.idea/
+*.iml
