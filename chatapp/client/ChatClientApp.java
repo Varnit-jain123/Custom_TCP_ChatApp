@@ -12,11 +12,18 @@ public class ChatClientApp implements Application {
     private String username;
     private String pendingLoginJobId;
     
-    // UI Frames
+    // UI Elements
     private JFrame loginFrame;
-    private JFrame dashboardFrame;
+    
+    // Unified Main Frame Elements
+    private JFrame mainFrame;
     private DefaultListModel<String> onlineListModel = new DefaultListModel<>();
-    private HashMap<String, ChatWindow> chatWindows = new HashMap<>();
+    private JList<String> onlineList;
+    private JPanel chatCardPanel; // Center panel using CardLayout
+    private CardLayout cardLayout;
+    
+    // Keeps track of active chat panels by username
+    private HashMap<String, ChatPanel> chatPanels = new HashMap<>();
 
     public ChatClientApp() {
         client = new Client(this, "localhost", 5050, 4040);
@@ -27,13 +34,13 @@ public class ChatClientApp implements Application {
         loginFrame = new JFrame("Chat Login");
         loginFrame.setSize(300, 200);
         loginFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        loginFrame.setLayout(new GridLayout(3, 2));
+        loginFrame.setLayout(new GridLayout(3, 2, 5, 5));
 
-        loginFrame.add(new JLabel("Username:"));
+        loginFrame.add(new JLabel("  Username:"));
         JTextField txtUser = new JTextField();
         loginFrame.add(txtUser);
 
-        loginFrame.add(new JLabel("Password:"));
+        loginFrame.add(new JLabel("  Password:"));
         JPasswordField txtPass = new JPasswordField();
         loginFrame.add(txtPass);
 
@@ -53,43 +60,72 @@ public class ChatClientApp implements Application {
                 btnLogin.setEnabled(false);
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(loginFrame, "Connection Failed: " + ex.getMessage());
+                btnLogin.setEnabled(true);
             }
         });
 
+        loginFrame.setLocationRelativeTo(null);
         loginFrame.setVisible(true);
     }
 
-    private void showDashboardUI() {
-        dashboardFrame = new JFrame("Dashboard - " + username);
-        dashboardFrame.setSize(300, 400);
-        dashboardFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        dashboardFrame.setLayout(new BorderLayout());
+    private void showMainUI() {
+        mainFrame = new JFrame("Chat - " + username);
+        mainFrame.setSize(800, 500);
+        mainFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        mainFrame.setLayout(new BorderLayout());
 
-        JList<String> list = new JList<>(onlineListModel);
-        dashboardFrame.add(new JScrollPane(list), BorderLayout.CENTER);
+        // --- RIGHT SIDEBAR (Online Users) ---
+        JPanel sidebarPanel = new JPanel(new BorderLayout());
+        sidebarPanel.setPreferredSize(new Dimension(200, 0));
+        
+        JLabel lblOnline = new JLabel("Online Users", SwingConstants.CENTER);
+        lblOnline.setFont(new Font("Arial", Font.BOLD, 14));
+        lblOnline.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
+        sidebarPanel.add(lblOnline, BorderLayout.NORTH);
 
-        list.addMouseListener(new MouseAdapter() {
+        onlineList = new JList<>(onlineListModel);
+        onlineList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        sidebarPanel.add(new JScrollPane(onlineList), BorderLayout.CENTER);
+
+        // Double click listener
+        onlineList.addMouseListener(new MouseAdapter() {
             public void mouseClicked(MouseEvent evt) {
                 if (evt.getClickCount() == 2) {
-                    String selectedUser = list.getSelectedValue();
+                    String selectedUser = onlineList.getSelectedValue();
                     if (selectedUser != null) {
-                        openChatWindow(selectedUser);
+                        openChatView(selectedUser);
                     }
                 }
             }
         });
 
-        dashboardFrame.setVisible(true);
+        // --- LEFT SIDE (Chat Area) ---
+        cardLayout = new CardLayout();
+        chatCardPanel = new JPanel(cardLayout);
+
+        // Default empty view
+        JPanel defaultPanel = new JPanel(new GridBagLayout());
+        JLabel lblDefault = new JLabel("Double click a user on the right to start chatting!");
+        lblDefault.setForeground(Color.GRAY);
+        defaultPanel.add(lblDefault);
+        chatCardPanel.add(defaultPanel, "DEFAULT");
+
+        // Assemble main frame
+        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, chatCardPanel, sidebarPanel);
+        splitPane.setResizeWeight(1.0); // Give all extra space to the chat area
+        mainFrame.add(splitPane, BorderLayout.CENTER);
+
+        mainFrame.setLocationRelativeTo(null);
+        mainFrame.setVisible(true);
     }
 
-    private ChatWindow openChatWindow(String remoteUser) {
-        if (!chatWindows.containsKey(remoteUser)) {
-            ChatWindow cw = new ChatWindow(remoteUser);
-            chatWindows.put(remoteUser, cw);
+    private void openChatView(String remoteUser) {
+        if (!chatPanels.containsKey(remoteUser)) {
+            ChatPanel cp = new ChatPanel(remoteUser);
+            chatPanels.put(remoteUser, cp);
+            chatCardPanel.add(cp, remoteUser);
         }
-        ChatWindow cw = chatWindows.get(remoteUser);
-        cw.frame.setVisible(true);
-        return cw;
+        cardLayout.show(chatCardPanel, remoteUser);
     }
 
     @Override
@@ -114,8 +150,14 @@ public class ChatClientApp implements Application {
             String fromUser = parts[1];
             String msg = parts.length > 2 ? parts[2] : "";
             SwingUtilities.invokeLater(() -> {
-                ChatWindow cw = openChatWindow(fromUser);
-                cw.appendMessage(fromUser, msg);
+                if (!chatPanels.containsKey(fromUser)) {
+                    ChatPanel cp = new ChatPanel(fromUser);
+                    chatPanels.put(fromUser, cp);
+                    chatCardPanel.add(cp, fromUser);
+                }
+                chatPanels.get(fromUser).appendMessage(fromUser, msg);
+                // Auto pop-up the chat when a message arrives
+                cardLayout.show(chatCardPanel, fromUser);
             });
         }
 
@@ -129,9 +171,10 @@ public class ChatClientApp implements Application {
             SwingUtilities.invokeLater(() -> {
                 if (response.startsWith(Protocol.LOGIN_SUCCESS)) {
                     loginFrame.setVisible(false);
-                    showDashboardUI();
+                    showMainUI();
                 } else {
                     JOptionPane.showMessageDialog(loginFrame, "Login failed: " + response);
+                    // Re-enable button (simplified error handling)
                 }
             });
             pendingLoginJobId = null;
@@ -141,40 +184,71 @@ public class ChatClientApp implements Application {
     @Override
     public void onConnected(String id) {}
 
-    class ChatWindow {
-        JFrame frame;
-        JTextArea txtHistory;
-        JTextField txtMessage;
+    @Override
+    public void onDisconnected(String id) {
+        System.out.println("Disconnected from server.");
+        SwingUtilities.invokeLater(() -> {
+            if (mainFrame != null) {
+                JOptionPane.showMessageDialog(mainFrame, "Lost connection to server.");
+                System.exit(0);
+            }
+        });
+    }
 
-        public ChatWindow(String remoteUser) {
-            frame = new JFrame("Chat with " + remoteUser);
-            frame.setSize(400, 300);
-            frame.setLayout(new BorderLayout());
+    // Inner class representing a single chat view
+    class ChatPanel extends JPanel {
+        private String remoteUser;
+        private JTextArea txtHistory;
+        private JTextField txtMessage;
 
+        public ChatPanel(String remoteUser) {
+            this.remoteUser = remoteUser;
+            setLayout(new BorderLayout());
+
+            // Header
+            JLabel lblHeader = new JLabel("  Chatting with " + remoteUser);
+            lblHeader.setFont(new Font("Arial", Font.BOLD, 14));
+            lblHeader.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+            lblHeader.setOpaque(true);
+            lblHeader.setBackground(new Color(230, 230, 230));
+            add(lblHeader, BorderLayout.NORTH);
+
+            // History
             txtHistory = new JTextArea();
             txtHistory.setEditable(false);
-            frame.add(new JScrollPane(txtHistory), BorderLayout.CENTER);
+            txtHistory.setLineWrap(true);
+            txtHistory.setWrapStyleWord(true);
+            add(new JScrollPane(txtHistory), BorderLayout.CENTER);
 
-            JPanel bottom = new JPanel(new BorderLayout());
+            // Bottom Input
+            JPanel bottomPanel = new JPanel(new BorderLayout(5, 5));
+            bottomPanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
             txtMessage = new JTextField();
             JButton btnSend = new JButton("Send");
-            bottom.add(txtMessage, BorderLayout.CENTER);
-            bottom.add(btnSend, BorderLayout.EAST);
-            frame.add(bottom, BorderLayout.SOUTH);
+            bottomPanel.add(txtMessage, BorderLayout.CENTER);
+            bottomPanel.add(btnSend, BorderLayout.EAST);
+            add(bottomPanel, BorderLayout.SOUTH);
 
-            btnSend.addActionListener(e -> {
-                String msg = txtMessage.getText();
-                if (!msg.isEmpty()) {
-                    appendMessage("Me", msg);
-                    String payload = Protocol.CHAT + "#" + remoteUser + "#" + msg;
-                    client.sendData(payload.getBytes());
-                    txtMessage.setText("");
-                }
-            });
+            // Send Action
+            ActionListener sendAction = e -> sendMessage();
+            btnSend.addActionListener(sendAction);
+            txtMessage.addActionListener(sendAction); // Send on Enter key
+        }
+
+        private void sendMessage() {
+            String msg = txtMessage.getText().trim();
+            if (!msg.isEmpty()) {
+                appendMessage("Me", msg);
+                String payload = Protocol.CHAT + "#" + remoteUser + "#" + msg;
+                client.sendData(payload.getBytes());
+                txtMessage.setText("");
+            }
         }
 
         public void appendMessage(String sender, String msg) {
             txtHistory.append(sender + ": " + msg + "\n");
+            // Auto scroll to bottom
+            txtHistory.setCaretPosition(txtHistory.getDocument().getLength());
         }
     }
 

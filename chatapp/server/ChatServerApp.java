@@ -127,6 +127,18 @@ public class ChatServerApp extends JFrame implements Application {
     public void onConnected(String id) {
     }
 
+    @Override
+    public synchronized void onDisconnected(String id) {
+        String user = connectionIdToUsername.get(id);
+        if (user != null) {
+            onlineUsers.remove(user);
+            connectionIdToUsername.remove(id);
+            usernameToConnectionId.remove(user);
+            updateOnlineList();
+            broadcastOnlineUsers();
+        }
+    }
+
     public static void main(String[] args) {
         new ChatServerApp();
     }

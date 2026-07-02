@@ -67,6 +67,7 @@ public class PipeLine2Receive extends Thread {
             }
         } catch (Exception exception) {
             this.clientConnected = false;
+            application.onDisconnected(clientId);
         }
     }
 }

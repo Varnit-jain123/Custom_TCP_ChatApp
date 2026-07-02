@@ -99,6 +99,20 @@ public class HeadlessChatServerApp implements Application {
         System.out.println("New raw socket connection established. ID: " + id);
     }
 
+    @Override
+    public synchronized void onDisconnected(String id) {
+        String user = connectionIdToUsername.get(id);
+        if (user != null) {
+            onlineUsers.remove(user);
+            connectionIdToUsername.remove(id);
+            usernameToConnectionId.remove(user);
+            System.out.println("User disconnected: " + user);
+            broadcastOnlineUsers();
+        } else {
+            System.out.println("Raw socket disconnected. ID: " + id);
+        }
+    }
+
     public static void main(String[] args) {
         new HeadlessChatServerApp();
     }

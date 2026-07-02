@@ -12,3 +12,6 @@ Desktop.ini
 .vscode/
 .idea/
 *.iml
+
+#  extra
+dockerHelp.txt
