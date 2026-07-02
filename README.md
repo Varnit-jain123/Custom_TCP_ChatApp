@@ -18,7 +18,7 @@ The server is containerized with Docker, running entirely headless, while the cl
 ### 1. Run the Server (Docker)
 Pull the image and run the server on your local machine with port forwarding:
 ```bash
-docker run -p 5050:5050 -p 4040:4040 <your-dockerhub-username>/chatapp-server
+docker run -p 5050:5050 -p 4040:4040 varnitjaintj/chatapp-server
 ```
 
 ### 2. Run the Client
