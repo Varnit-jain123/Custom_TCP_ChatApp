@@ -14,18 +14,19 @@ public class ChatClientApp implements Application {
     private String username;
     private String pendingLoginJobId;
     private Gson gson = new Gson();
-    
+
     // UI Elements
     private JFrame loginFrame;
     private JFrame mainFrame;
     private DefaultListModel<String> onlineListModel = new DefaultListModel<>();
     private JList<String> onlineList;
-    private JPanel chatCardPanel; 
+    private JPanel chatCardPanel;
     private CardLayout cardLayout;
     private HashMap<String, ChatPanel> chatPanels = new HashMap<>();
 
     public ChatClientApp() {
-        client = new Client(this, "localhost", 5050, 4040);
+        // client = new Client(this, "localhost", 5050, 4040);
+        client = new Client(this, "13.234.113.178", 5050, 4040);
         showLoginUI();
     }
 
@@ -44,22 +45,22 @@ public class ChatClientApp implements Application {
         loginFrame.add(txtPass);
 
         JButton btnLogin = new JButton("Login");
-        loginFrame.add(new JLabel()); 
+        loginFrame.add(new JLabel());
         loginFrame.add(btnLogin);
 
         btnLogin.addActionListener(e -> {
             try {
                 if (client == null || pendingLoginJobId == null) {
-                    client.connect(); 
+                    client.connect();
                 }
                 this.username = txtUser.getText();
                 String pass = new String(txtPass.getPassword());
-                
+
                 Message m = new Message();
                 m.type = Protocol.LOGIN;
                 m.sender = this.username;
                 m.password = pass;
-                
+
                 String payload = gson.toJson(m);
                 pendingLoginJobId = client.sendData(payload.getBytes());
                 btnLogin.setEnabled(false);
@@ -81,7 +82,7 @@ public class ChatClientApp implements Application {
 
         JPanel sidebarPanel = new JPanel(new BorderLayout());
         sidebarPanel.setPreferredSize(new Dimension(200, 0));
-        
+
         JLabel lblOnline = new JLabel("Online Users", SwingConstants.CENTER);
         lblOnline.setFont(new Font("Arial", Font.BOLD, 14));
         lblOnline.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
@@ -112,7 +113,7 @@ public class ChatClientApp implements Application {
         chatCardPanel.add(defaultPanel, "DEFAULT");
 
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, chatCardPanel, sidebarPanel);
-        splitPane.setResizeWeight(1.0); 
+        splitPane.setResizeWeight(1.0);
         mainFrame.add(splitPane, BorderLayout.CENTER);
 
         mainFrame.setLocationRelativeTo(null);
@@ -190,7 +191,8 @@ public class ChatClientApp implements Application {
     }
 
     @Override
-    public void onConnected(String id) {}
+    public void onConnected(String id) {
+    }
 
     @Override
     public void onDisconnected(String id) {
@@ -235,19 +237,19 @@ public class ChatClientApp implements Application {
 
             ActionListener sendAction = e -> sendMessage();
             btnSend.addActionListener(sendAction);
-            txtMessage.addActionListener(sendAction); 
+            txtMessage.addActionListener(sendAction);
         }
 
         private void sendMessage() {
             String text = txtMessage.getText().trim();
             if (!text.isEmpty()) {
                 appendMessage("Me", text);
-                
+
                 Message m = new Message();
                 m.type = Protocol.CHAT;
                 m.recipient = remoteUser;
                 m.content = text;
-                
+
                 String payload = gson.toJson(m);
                 client.sendData(payload.getBytes());
                 txtMessage.setText("");
