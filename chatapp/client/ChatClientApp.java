@@ -171,6 +171,10 @@ public class ChatClientApp implements Application {
                 String response = new String(bytes);
                 Message msg = gson.fromJson(response, Message.class);
                 SwingUtilities.invokeLater(() -> {
+                    if (msg == null) {
+                        JOptionPane.showMessageDialog(loginFrame, "Error: Received empty response from server.");
+                        return;
+                    }
                     if (msg.type.equals(Protocol.LOGIN_SUCCESS)) {
                         loginFrame.setVisible(false);
                         showMainUI();
