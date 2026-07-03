@@ -49,15 +49,15 @@ If you want to run the code manually, compile the Java files and run the applica
 
 **1. Start the Server:**
 ```bash
-javac chatapp/core/*.java chatapp/shared/*.java chatapp/server/*.java
-java chatapp.server.ChatServerApp
+javac -cp ".;lib/*" chatapp/core/*.java chatapp/shared/*.java chatapp/server/*.java
+java -cp ".;lib/*" chatapp.server.ChatServerApp
 ```
 
 **2. Start the Client:**
 Open a new terminal window to act as a user.
 ```bash
-javac chatapp/core/*.java chatapp/shared/*.java chatapp/client/*.java
-java chatapp.client.ChatClientApp
+javac -cp ".;lib/*" chatapp/core/*.java chatapp/shared/*.java chatapp/client/*.java
+java -cp ".;lib/*" chatapp.client.ChatClientApp
 ```
 *(By default, the client attempts to connect to `localhost`. If you are hosting the Docker server on a cloud VM, change `localhost` in `ChatClientApp.java` to your VM's public IP address before compiling).*
 

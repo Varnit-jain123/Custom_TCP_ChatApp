@@ -2,6 +2,8 @@ package chatapp.client;
 
 import chatapp.core.*;
 import chatapp.shared.Protocol;
+import chatapp.shared.Message;
+import com.google.gson.Gson;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
@@ -11,18 +13,15 @@ public class ChatClientApp implements Application {
     private Client client;
     private String username;
     private String pendingLoginJobId;
+    private Gson gson = new Gson();
     
     // UI Elements
     private JFrame loginFrame;
-    
-    // Unified Main Frame Elements
     private JFrame mainFrame;
     private DefaultListModel<String> onlineListModel = new DefaultListModel<>();
     private JList<String> onlineList;
-    private JPanel chatCardPanel; // Center panel using CardLayout
+    private JPanel chatCardPanel; 
     private CardLayout cardLayout;
-    
-    // Keeps track of active chat panels by username
     private HashMap<String, ChatPanel> chatPanels = new HashMap<>();
 
     public ChatClientApp() {
@@ -45,17 +44,23 @@ public class ChatClientApp implements Application {
         loginFrame.add(txtPass);
 
         JButton btnLogin = new JButton("Login");
-        loginFrame.add(new JLabel()); // empty cell
+        loginFrame.add(new JLabel()); 
         loginFrame.add(btnLogin);
 
         btnLogin.addActionListener(e -> {
             try {
                 if (client == null || pendingLoginJobId == null) {
-                    client.connect(); // Connect if not connected
+                    client.connect(); 
                 }
                 this.username = txtUser.getText();
                 String pass = new String(txtPass.getPassword());
-                String payload = Protocol.LOGIN + "#" + this.username + "#" + pass;
+                
+                Message m = new Message();
+                m.type = Protocol.LOGIN;
+                m.sender = this.username;
+                m.password = pass;
+                
+                String payload = gson.toJson(m);
                 pendingLoginJobId = client.sendData(payload.getBytes());
                 btnLogin.setEnabled(false);
             } catch (Exception ex) {
@@ -74,7 +79,6 @@ public class ChatClientApp implements Application {
         mainFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         mainFrame.setLayout(new BorderLayout());
 
-        // --- RIGHT SIDEBAR (Online Users) ---
         JPanel sidebarPanel = new JPanel(new BorderLayout());
         sidebarPanel.setPreferredSize(new Dimension(200, 0));
         
@@ -87,7 +91,6 @@ public class ChatClientApp implements Application {
         onlineList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         sidebarPanel.add(new JScrollPane(onlineList), BorderLayout.CENTER);
 
-        // Double click listener
         onlineList.addMouseListener(new MouseAdapter() {
             public void mouseClicked(MouseEvent evt) {
                 if (evt.getClickCount() == 2) {
@@ -99,20 +102,17 @@ public class ChatClientApp implements Application {
             }
         });
 
-        // --- LEFT SIDE (Chat Area) ---
         cardLayout = new CardLayout();
         chatCardPanel = new JPanel(cardLayout);
 
-        // Default empty view
         JPanel defaultPanel = new JPanel(new GridBagLayout());
         JLabel lblDefault = new JLabel("Double click a user on the right to start chatting!");
         lblDefault.setForeground(Color.GRAY);
         defaultPanel.add(lblDefault);
         chatCardPanel.add(defaultPanel, "DEFAULT");
 
-        // Assemble main frame
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, chatCardPanel, sidebarPanel);
-        splitPane.setResizeWeight(1.0); // Give all extra space to the chat area
+        splitPane.setResizeWeight(1.0); 
         mainFrame.add(splitPane, BorderLayout.CENTER);
 
         mainFrame.setLocationRelativeTo(null);
@@ -130,53 +130,57 @@ public class ChatClientApp implements Application {
 
     @Override
     public byte[] onRequestBytes(String id, byte[] bytes) {
-        String req = new String(bytes);
-        String[] parts = req.split("#");
-        String cmd = parts[0];
+        try {
+            String req = new String(bytes);
+            Message msg = gson.fromJson(req, Message.class);
 
-        if (cmd.equals(Protocol.ONLINE_USERS)) {
-            SwingUtilities.invokeLater(() -> {
-                onlineListModel.clear();
-                if (parts.length > 1 && !parts[1].isEmpty()) {
-                    String[] users = parts[1].split(",");
-                    for (String u : users) {
-                        if (!u.equals(username) && !u.isEmpty()) {
-                            onlineListModel.addElement(u);
+            if (msg.type.equals(Protocol.ONLINE_USERS)) {
+                SwingUtilities.invokeLater(() -> {
+                    onlineListModel.clear();
+                    if (msg.userList != null) {
+                        for (String u : msg.userList) {
+                            if (!u.equals(username) && !u.isEmpty()) {
+                                onlineListModel.addElement(u);
+                            }
                         }
                     }
-                }
-            });
-        } else if (cmd.equals(Protocol.CHAT)) {
-            String fromUser = parts[1];
-            String msg = parts.length > 2 ? parts[2] : "";
-            SwingUtilities.invokeLater(() -> {
-                if (!chatPanels.containsKey(fromUser)) {
-                    ChatPanel cp = new ChatPanel(fromUser);
-                    chatPanels.put(fromUser, cp);
-                    chatCardPanel.add(cp, fromUser);
-                }
-                chatPanels.get(fromUser).appendMessage(fromUser, msg);
-                // Auto pop-up the chat when a message arrives
-                cardLayout.show(chatCardPanel, fromUser);
-            });
+                });
+            } else if (msg.type.equals(Protocol.CHAT)) {
+                String fromUser = msg.sender;
+                String text = msg.content;
+                SwingUtilities.invokeLater(() -> {
+                    if (!chatPanels.containsKey(fromUser)) {
+                        ChatPanel cp = new ChatPanel(fromUser);
+                        chatPanels.put(fromUser, cp);
+                        chatCardPanel.add(cp, fromUser);
+                    }
+                    chatPanels.get(fromUser).appendMessage(fromUser, text);
+                    cardLayout.show(chatCardPanel, fromUser);
+                });
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
-
         return new byte[0];
     }
 
     @Override
     public void onResponseBytes(String id, byte[] bytes) {
         if (id.equals(pendingLoginJobId)) {
-            String response = new String(bytes);
-            SwingUtilities.invokeLater(() -> {
-                if (response.startsWith(Protocol.LOGIN_SUCCESS)) {
-                    loginFrame.setVisible(false);
-                    showMainUI();
-                } else {
-                    JOptionPane.showMessageDialog(loginFrame, "Login failed: " + response);
-                    // Re-enable button (simplified error handling)
-                }
-            });
+            try {
+                String response = new String(bytes);
+                Message msg = gson.fromJson(response, Message.class);
+                SwingUtilities.invokeLater(() -> {
+                    if (msg.type.equals(Protocol.LOGIN_SUCCESS)) {
+                        loginFrame.setVisible(false);
+                        showMainUI();
+                    } else {
+                        JOptionPane.showMessageDialog(loginFrame, "Login failed: " + msg.content);
+                    }
+                });
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
             pendingLoginJobId = null;
         }
     }
@@ -195,7 +199,6 @@ public class ChatClientApp implements Application {
         });
     }
 
-    // Inner class representing a single chat view
     class ChatPanel extends JPanel {
         private String remoteUser;
         private JTextArea txtHistory;
@@ -205,7 +208,6 @@ public class ChatClientApp implements Application {
             this.remoteUser = remoteUser;
             setLayout(new BorderLayout());
 
-            // Header
             JLabel lblHeader = new JLabel("  Chatting with " + remoteUser);
             lblHeader.setFont(new Font("Arial", Font.BOLD, 14));
             lblHeader.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
@@ -213,14 +215,12 @@ public class ChatClientApp implements Application {
             lblHeader.setBackground(new Color(230, 230, 230));
             add(lblHeader, BorderLayout.NORTH);
 
-            // History
             txtHistory = new JTextArea();
             txtHistory.setEditable(false);
             txtHistory.setLineWrap(true);
             txtHistory.setWrapStyleWord(true);
             add(new JScrollPane(txtHistory), BorderLayout.CENTER);
 
-            // Bottom Input
             JPanel bottomPanel = new JPanel(new BorderLayout(5, 5));
             bottomPanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
             txtMessage = new JTextField();
@@ -229,17 +229,22 @@ public class ChatClientApp implements Application {
             bottomPanel.add(btnSend, BorderLayout.EAST);
             add(bottomPanel, BorderLayout.SOUTH);
 
-            // Send Action
             ActionListener sendAction = e -> sendMessage();
             btnSend.addActionListener(sendAction);
-            txtMessage.addActionListener(sendAction); // Send on Enter key
+            txtMessage.addActionListener(sendAction); 
         }
 
         private void sendMessage() {
-            String msg = txtMessage.getText().trim();
-            if (!msg.isEmpty()) {
-                appendMessage("Me", msg);
-                String payload = Protocol.CHAT + "#" + remoteUser + "#" + msg;
+            String text = txtMessage.getText().trim();
+            if (!text.isEmpty()) {
+                appendMessage("Me", text);
+                
+                Message m = new Message();
+                m.type = Protocol.CHAT;
+                m.recipient = remoteUser;
+                m.content = text;
+                
+                String payload = gson.toJson(m);
                 client.sendData(payload.getBytes());
                 txtMessage.setText("");
             }
@@ -247,7 +252,6 @@ public class ChatClientApp implements Application {
 
         public void appendMessage(String sender, String msg) {
             txtHistory.append(sender + ": " + msg + "\n");
-            // Auto scroll to bottom
             txtHistory.setCaretPosition(txtHistory.getDocument().getLength());
         }
     }

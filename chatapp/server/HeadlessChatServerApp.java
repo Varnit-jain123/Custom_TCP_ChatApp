@@ -2,6 +2,8 @@ package chatapp.server;
 
 import chatapp.core.*;
 import chatapp.shared.Protocol;
+import chatapp.shared.Message;
+import com.google.gson.Gson;
 import java.io.*;
 import java.util.*;
 
@@ -11,6 +13,7 @@ public class HeadlessChatServerApp implements Application {
     private HashSet<String> onlineUsers = new HashSet<>();
     private HashMap<String, String> connectionIdToUsername = new HashMap<>();
     private HashMap<String, String> usernameToConnectionId = new HashMap<>();
+    private Gson gson = new Gson();
 
     public HeadlessChatServerApp() {
         System.out.println("Starting Headless Chat Server for Docker...");
@@ -42,11 +45,10 @@ public class HeadlessChatServerApp implements Application {
     }
 
     private void broadcastOnlineUsers() {
-        StringBuilder sb = new StringBuilder(Protocol.ONLINE_USERS).append("#");
-        for (String user : onlineUsers) {
-            sb.append(user).append(",");
-        }
-        byte[] data = sb.toString().getBytes();
+        Message m = new Message();
+        m.type = Protocol.ONLINE_USERS;
+        m.userList = new ArrayList<>(onlineUsers);
+        byte[] data = gson.toJson(m).getBytes();
         for (String cid : connectionIdToUsername.keySet()) {
             server.sendData(cid, data);
         }
@@ -54,40 +56,48 @@ public class HeadlessChatServerApp implements Application {
 
     @Override
     public byte[] onRequestBytes(String id, byte[] bytes) {
-        String req = new String(bytes);
-        String[] parts = req.split("#");
-        String command = parts[0];
+        try {
+            String req = new String(bytes);
+            Message msg = gson.fromJson(req, Message.class);
 
-        if (command.equals(Protocol.LOGIN)) {
-            String user = parts[1];
-            String pass = parts[2];
-            if (userCredentials.containsKey(user) && userCredentials.get(user).equals(pass)) {
-                if (onlineUsers.contains(user)) {
-                    System.out.println("User " + user + " attempted to login, but is already logged in.");
-                    return (Protocol.LOGIN_FAIL + "#Already logged in").getBytes();
+            if (msg.type.equals(Protocol.LOGIN)) {
+                String user = msg.sender;
+                String pass = msg.password;
+                Message response = new Message();
+                
+                if (userCredentials.containsKey(user) && userCredentials.get(user).equals(pass)) {
+                    if (onlineUsers.contains(user)) {
+                        System.out.println("User " + user + " attempted to login, but is already logged in.");
+                        response.type = Protocol.LOGIN_FAIL;
+                        response.content = "Already logged in";
+                        return gson.toJson(response).getBytes();
+                    }
+                    onlineUsers.add(user);
+                    connectionIdToUsername.put(id, user);
+                    usernameToConnectionId.put(user, id);
+                    System.out.println("User connected: " + user);
+                    broadcastOnlineUsers();
+                    
+                    response.type = Protocol.LOGIN_SUCCESS;
+                    return gson.toJson(response).getBytes();
+                } else {
+                    System.out.println("Failed login attempt for user: " + user);
+                    response.type = Protocol.LOGIN_FAIL;
+                    response.content = "Invalid credentials";
+                    return gson.toJson(response).getBytes();
                 }
-                onlineUsers.add(user);
-                connectionIdToUsername.put(id, user);
-                usernameToConnectionId.put(user, id);
-                System.out.println("User connected: " + user);
-                broadcastOnlineUsers();
-                return (Protocol.LOGIN_SUCCESS + "#").getBytes();
-            } else {
-                System.out.println("Failed login attempt for user: " + user);
-                return (Protocol.LOGIN_FAIL + "#Invalid credentials").getBytes();
+            } else if (msg.type.equals(Protocol.CHAT)) {
+                String toUser = msg.recipient;
+                String toCid = usernameToConnectionId.get(toUser);
+                if (toCid != null) {
+                    msg.sender = connectionIdToUsername.get(id); // Ensure correct sender
+                    String payload = gson.toJson(msg);
+                    server.sendData(toCid, payload.getBytes());
+                }
             }
-        } else if (command.equals(Protocol.CHAT)) {
-            String toUser = parts[1];
-            String message = parts.length > 2 ? parts[2] : "";
-            String fromUser = connectionIdToUsername.get(id);
-            System.out.println("[CHAT] " + fromUser + " -> " + toUser + ": " + message);
-            String toCid = usernameToConnectionId.get(toUser);
-            if (toCid != null) {
-                String payload = Protocol.CHAT + "#" + fromUser + "#" + message;
-                server.sendData(toCid, payload.getBytes());
-            }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
-
         return new byte[0];
     }
 
